@@ -1,0 +1,4 @@
+# local keys
+github_deploy_key*
+# macOS
+.DS_Store
