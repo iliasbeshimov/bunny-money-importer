@@ -262,7 +262,7 @@ var BunnyMoney = (function() {
     var vm = html.match(/<div[^>]+class=["'][^"']*viewlottext[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
     var block = vm ? vm[1] : html;
     // Collect all <div class="description"> blocks within, excluding id="postbid" and id="watchnote"
-    var out = [];
+    var descs = [];
     var re = /<div([^>]+)class=["'][^"']*description[^"']*["'][^>]*>([\s\S]*?)<\/div>/ig;
     var m;
     while ((m = re.exec(block)) !== null) {
@@ -271,19 +271,20 @@ var BunnyMoney = (function() {
       var inner = m[2];
       // Keep only substantial text (skip tiny helper divs)
       var text = stripTags(inner).trim();
-      if (text) out.push(text);
+      if (text) descs.push(text);
     }
-    if (out.length) {
-      return decodeHtml(normalizeMultiline(out.join('\n\n'))).trim();
+    if (descs.length) {
+      // Use the last description block which typically contains the full lot text
+      return decodeHtml(normalizeMultiline(descs[descs.length - 1])).trim();
     }
     return '';
   }
 
   function collectCoinImages(html) {
-    var out = [];
+    var list = [];
     // Prefer OpenGraph image first
     var og = getMeta(html, 'property', 'og:image');
-    if (og) out.push(og);
+    if (og) list.push(og);
     // Then only coin images hosted under media.numisbids.com/sales (exclude logos/headers)
     var imgRe = /<img[^>]+src=["']([^"']+)["'][^>]*>/ig;
     var m;
@@ -292,11 +293,18 @@ var BunnyMoney = (function() {
       if (!u) continue;
       if (/static\.numisbids\.com\/images\//i.test(u)) continue; // skip headers/logos/icons
       if (/logo|header|favicon|mstile|email\.png/i.test(u)) continue;
-      if (/media\.numisbids\.com\/sales\//i.test(u)) out.push(u);
+      if (/media\.numisbids\.com\/sales\//i.test(u)) list.push(u);
     }
-    // de-dup & normalize protocol
-    var uniq = Array.from(new Set(out));
-    return uniq.map(function(u){ return u && u.startsWith('//') ? 'https:' + u : u; });
+    // Normalize and then de-dup
+    var norm = list.map(function(u){ return u && u.startsWith('//') ? 'https:' + u : u; })
+                   .filter(function(u){ return !!u; });
+    var seen = Object.create(null);
+    var out = [];
+    for (var i=0;i<norm.length;i++) {
+      var url = norm[i];
+      if (!seen[url]) { seen[url] = true; out.push(url); }
+    }
+    return out;
   }
 
   function detectMaterial(text) {
