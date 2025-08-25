@@ -12,6 +12,7 @@ var BunnyMoney = (function() {
     SpreadsheetApp.getUi()
       .createMenu('Bunny Money')
       .addItem('Add from NumisBids URL', 'BM_addFromNumisBids')
+      .addItem('Reload and Add (force)', 'BM_reloadAndAddFromNumisBids')
       .addItem('Force reload module (5m cache)', 'BM_reloadModule')
       .addToUi();
   }
@@ -30,6 +31,13 @@ var BunnyMoney = (function() {
     const parsed = parseNumisBids(html, url);
     const enriched = enrichWithHeuristics(parsed);
     const finalData = maybeFillWithAI(enriched);
+
+    // Debug trace to Execution Log
+    try {
+      Logger.log('[Add] URL=%s', url);
+      Logger.log('[Add] Desc.len=%s first100="%s"', (finalData.description||'').length, (finalData.description||'').slice(0,100));
+      Logger.log('[Add] Images=%s', JSON.stringify(finalData.images||[]));
+    } catch (e) {}
 
     const sheet = SpreadsheetApp.getActiveSheet();
     const headers = getHeaders(sheet);
@@ -258,9 +266,8 @@ var BunnyMoney = (function() {
 
   // Extract just the visible lot description text, skipping estimate and helper blocks.
   function extractLotDescription(html) {
-    // Narrow to the .viewlottext block first
-    var vm = html.match(/<div[^>]+class=["'][^"']*viewlottext[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
-    var block = vm ? vm[1] : html;
+    // Scan entire HTML; nested DIVs make it unreliable to slice .viewlottext with regex
+    var block = html;
     // Collect all <div class="description"> blocks within, excluding id="postbid" and id="watchnote"
     var descs = [];
     var re = /<div([^>]+)class=["'][^"']*description[^"']*["'][^>]*>([\s\S]*?)<\/div>/ig;
@@ -268,7 +275,9 @@ var BunnyMoney = (function() {
     while ((m = re.exec(block)) !== null) {
       var attrs = m[1] || '';
       if (/id=["'](postbid|watchnote)["']/i.test(attrs)) continue; // skip hidden/note blocks
-      var inner = m[2];
+      var inner = m[2]
+        .replace(/<\s*br\s*\/?\s*>/ig, '\n')
+        .replace(/<\s*\/p\s*>/ig, '\n');
       // Keep only substantial text (skip tiny helper divs)
       var text = stripTags(inner).trim();
       if (text) descs.push(text);
