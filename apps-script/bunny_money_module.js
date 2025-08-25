@@ -44,6 +44,7 @@ var BunnyMoney = (function() {
 
     // Build row strictly for existing headers (no new columns)
     const imgs = Array.isArray(finalData.images) ? finalData.images : [];
+    const importDate = Utilities.formatDate(new Date(), (Session.getScriptTimeZone && Session.getScriptTimeZone()) || 'UTC', 'yyyy-MM-dd');
     const map = {
       'Description': finalData.description || '',
       'Country / Region': finalData.region || '',
@@ -51,7 +52,7 @@ var BunnyMoney = (function() {
       'Value': finalData.value || '', // face value only for modern coins (numeric), else blank
       'Denomination': finalData.denomination || '',
       'Material': finalData.material || '',
-      'Notes': finalData.notes || '',
+      'Notes': 'Imported ' + importDate,
       'Link': finalData.url || url
     };
 
@@ -110,9 +111,8 @@ var BunnyMoney = (function() {
       years = ySingle[1] + ' ' + ySingle[2];
     }
 
-    // References (RIC, RSC, SNG, HGC) -> Notes
-    const refs = Array.from(new Set((full.match(/\b(RIC\s*[^);,.]+|RSC\s*[^);,.]+|SNG\s*[^);,.]+|HGC\s*[^);,.]+)\b/ig) || [])));
-    const notes = refs.length ? 'Refs: ' + refs.join('; ') : '';
+    // Notes are not derived from references; set at write time
+    const notes = '';
 
     // Material fallback by denom (e.g., Denarius -> Silver)
     if (!material && /\bDenarius\b/i.test(denomination || '')) material = 'Silver';
