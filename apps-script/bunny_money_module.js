@@ -79,11 +79,10 @@ var BunnyMoney = (function() {
 
   function parseNumisBids(html, url) {
     const title = getMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
-    const body = extractMainBlock(html);
-    const description = decodeHtml(normalizeMultiline(body || title || url)).trim();
+    const description = extractLotDescription(html) || decodeHtml(normalizeMultiline(extractMainBlock(html) || title || url)).trim();
 
-    // Images (absolute URLs; include og:image and page images)
-    const images = collectImages(html);
+    // Images (prefer og:image and media coin images; exclude logos/headers)
+    const images = collectCoinImages(html);
 
     // Use combined text for extraction
     const full = (title + ' ' + description).replace(/\s+/g, ' ');
@@ -112,7 +111,8 @@ var BunnyMoney = (function() {
 
     // Region from CAPS token if present; else blank (filled by heuristics/AI)
     let region = '';
-    const capToken = description.match(/\b([A-ZÄÖÜß]{3,}(?: [A-ZÄÖÜß]{3,})*)\./);
+    // Accept comma or period after REGION (e.g., "SICILY, Messana." or "SICILY. Messana.")
+    const capToken = description.match(/\b([A-ZÄÖÜß]{3,}(?: [A-ZÄÖÜß]{3,})*)(?:,|\.)/);
     if (capToken) region = normalizeRegion(capToken[1]);
 
     return { title, url, description, region, years, denomination, material, notes, images };
@@ -256,16 +256,44 @@ var BunnyMoney = (function() {
     return body ? stripTags(body) : '';
   }
 
-  function collectImages(html) {
+  // Extract just the visible lot description text, skipping estimate and helper blocks.
+  function extractLotDescription(html) {
+    // Narrow to the .viewlottext block first
+    var vm = html.match(/<div[^>]+class=["'][^"']*viewlottext[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+    var block = vm ? vm[1] : html;
+    // Collect all <div class="description"> blocks within, excluding id="postbid" and id="watchnote"
     var out = [];
+    var re = /<div([^>]+)class=["'][^"']*description[^"']*["'][^>]*>([\s\S]*?)<\/div>/ig;
+    var m;
+    while ((m = re.exec(block)) !== null) {
+      var attrs = m[1] || '';
+      if (/id=["'](postbid|watchnote)["']/i.test(attrs)) continue; // skip hidden/note blocks
+      var inner = m[2];
+      // Keep only substantial text (skip tiny helper divs)
+      var text = stripTags(inner).trim();
+      if (text) out.push(text);
+    }
+    if (out.length) {
+      return decodeHtml(normalizeMultiline(out.join('\n\n'))).trim();
+    }
+    return '';
+  }
+
+  function collectCoinImages(html) {
+    var out = [];
+    // Prefer OpenGraph image first
+    var og = getMeta(html, 'property', 'og:image');
+    if (og) out.push(og);
+    // Then only coin images hosted under media.numisbids.com/sales (exclude logos/headers)
     var imgRe = /<img[^>]+src=["']([^"']+)["'][^>]*>/ig;
     var m;
     while ((m = imgRe.exec(html)) !== null) {
       var u = m[1];
-      if (/numis/i.test(u) || /media\./i.test(u)) out.push(u);
+      if (!u) continue;
+      if (/static\.numisbids\.com\/images\//i.test(u)) continue; // skip headers/logos/icons
+      if (/logo|header|favicon|mstile|email\.png/i.test(u)) continue;
+      if (/media\.numisbids\.com\/sales\//i.test(u)) out.push(u);
     }
-    var og = getMeta(html, 'property', 'og:image');
-    if (og) out.unshift(og);
     // de-dup & normalize protocol
     var uniq = Array.from(new Set(out));
     return uniq.map(function(u){ return u && u.startsWith('//') ? 'https:' + u : u; });
@@ -338,4 +366,3 @@ var BunnyMoney = (function() {
   // Expose public API
   return { onOpen: onOpen, addFromNumisBids: addFromNumisBids };
 })();
-
